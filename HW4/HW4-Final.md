@@ -1,4 +1,4 @@
-\#Clustering and PCA
+#Clustering and PCA
 
 We first begin with a clustering algorithm which will partition the
 various types of wine into their mutually exclusive groupings. Centering
