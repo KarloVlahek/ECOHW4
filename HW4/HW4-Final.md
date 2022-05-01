@@ -1,4 +1,4 @@
-#Clustering and PCA
+# Clustering and PCA
 
 We first begin with a clustering algorithm which will partition the
 various types of wine into their mutually exclusive groupings. Centering
@@ -713,7 +713,7 @@ both methodologies yield similar conclusions. However,in this instance,
 K-Means++ allows for a richer interpretation of the data in a multitude
 of ways.
 
-\#Market segmentation
+# Market segmentation
 
 I started with some pre-processing to do some manual feature compression
 before my first approach of clustering. The original data had 36
@@ -833,7 +833,7 @@ educated guess on how to market to them most effectively. However, we
 can tell that health and social awareness are important to NutrientH20’s
 customer base.
 
-\#Association rules for grocery purchases
+# Association rules for grocery purchases
 
     ## To reduce overplotting, jitter is added! Use jitter = 0 to prevent jitter.
 
