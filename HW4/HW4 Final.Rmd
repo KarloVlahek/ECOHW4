@@ -1,0 +1,311 @@
+---
+title: "HW 4 Final"
+author: "John Walkington, Karlo Vlahek, and Colin McNally"
+date: '`r Sys.Date()`'
+output:
+  md_document:
+    variant: markdown_github
+always_allow_html: true
+---
+```{r setup, include=FALSE}
+data = read.csv("/Users/karlo/Desktop/ECO395M/data/social_marketing.csv")
+library(tidyverse)
+library(LICORS)  # for kmeans++
+library(foreach)
+library(mosaic)
+library(arules)
+library(arulesViz)
+library(igraph)
+library(foreach)
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+library(ggpubr)
+library(factoextra)
+library(ggcorrplot)
+library(ggfortify)
+library(patchwork)
+set.seed(1234)
+```
+
+#Clustering and PCA
+```{r include = FALSE}
+wine = read.csv("/Users/karlo/Desktop/Graduate_School/Spring_2022/Data_Mining/wine.csv")
+```
+
+We first begin with a clustering algorithm which will partition the various types of wine into their mutually exclusive groupings. Centering and scaling the data allows for easier interpretability down the line. This is also done to represent a solid measure of distance. For example, the fixed acidity feature has a variation that is larger by a factor of 80 from that of the citric acid feature. If we do not center and scale the data, distance would be biased towards and driven more by the former feature as opposed to the latter. Thus standardizing gives the features equal weight. The choice of K is intuitive. Since there are two 'classes' of wine, we will implement 2 clusters in the algorithm. The other K we will choose is 7 as there are 7 different levels of quality.
+
+```{r, echo=FALSE, error=FALSE, message=FALSE, warning =FALSE, include = FALSE}
+# Center and Scale
+X = wine[, -(12:13)]
+X = scale(X,center=TRUE, scale = TRUE)
+
+# Extracting scales and centers for later
+mu = attr(X,"scaled:center")
+sig = attr(X,"scaled:scale")
+
+# Run k-means and k-means++ with 2 clusters because there are red and white wines
+clust_color = kmeans(X,2, nstart = 25)
+clust_color_pp = kmeanspp(X,2, nstart = 25)
+
+## Run k-means and k-means++ with 7 clusters because there are 7 wine qualities
+clust_quality = kmeans(X,7, nstart = 25)
+clust_quality_pp = kmeanspp(X,7, nstart = 25)
+
+# Taking away the normalization components, we can interpret the centroids in their raw form
+clust_color_pp$center[1,]*sig + mu
+clust_color_pp$center[2,]*sig + mu
+clust_quality_pp$center[2,]*sig + mu
+clust_quality_pp$center[4,]*sig + mu
+clust_quality_pp$center[7,]*sig + mu
+
+# Which wine colors are in which cluster? 
+color_cluster1 = as.data.frame(wine[which(clust_color$cluster==1),]$color)
+color_cluster2 = as.data.frame(wine[which(clust_color$cluster==2),]$color)
+
+# Which wine level qualities are in which cluster?
+score_cluster7 = as.data.frame(wine[which(clust_quality_pp$cluster==7),]$quality)
+score_cluster5 = as.data.frame(wine[which(clust_quality_pp$cluster==5),]$quality)
+score_cluster3 = as.data.frame(wine[which(clust_quality_pp$cluster==3),]$quality)
+```
+
+```{r, echo=FALSE, error=FALSE, message=FALSE, warning =FALSE}
+zscore_features1 = knitr::kable(clust_color_pp$center, col.names = c("Fixed Acidity", "Volatile Acidity", "Citric Acid", "Residual Sugar", "Chlorides", "Free Sulfur Dioxide", "Total Sulfur Dioxide","Density", "pH", "Sulphates", "Alcohol"),
+                               caption = "Z-Score of Features for Color Cluster",
+                               booktabs = TRUE) %>% 
+  kable_styling(position = "center")
+                               
+zscore_features1
+
+zscore_features2 = knitr::kable(clust_quality$center, col.names = c("Fixed Acidity", "Volatile Acidity", "Citric Acid", "Residual Sugar", "Chlorides", "Free Sulfur Dioxide", "Total Sulfur Dioxide","Density", "pH", "Sulphates", "Alcohol"),
+                               caption = "Z-Score of Features for Quality Cluster",
+                               booktabs = TRUE) %>% 
+  kable_styling(position = "center")
+                               
+zscore_features2
+
+clust_color_pp$tot.withinss # Total Within Sum of Squares for K-Means++ Wine Color Clustering
+clust_quality_pp$tot.withinss # Total Within Sum of Squares for K-Means++ Quality Level Clustering
+clust_color_pp$betweenss # Total Between Sum of Squares for K-Means++ Wine Color Clustering
+clust_quality_pp$betweenss # Total Between Sum of Squares for K-Means++ Quality Level Clustering
+```
+
+As we can see above, these are the center points (or centroids) for both cluster types across all 11 features used, z-scored. Thus, the interpretation of theses numbers are as a z-score. That is, how many standard deviations above the mean of the entire data set a cluster is for a given feature. For example, the residual sugar amount for the cluster by wine color is .1998 standard deviations above the mean of all data points. Extending the interpretation, we can see that cluster one has below average fixed acidity, volatile acidity, chlorides, density, pH, and sulphates. Similar interpretations can be made for the quality cluster (i.e. - the quality score by the wine snobs) and above average features. When clustering for wine color, the within sum of squares and between sum of squares are the same. However, when clustering for quality, the K-Means++ algorithm returns a higher within sum of squares and lower between sum of squares. Thus, we will use K-Means++ for both the wine color and quality plots to determine the actual vs. predicted groupings.We will visualize the various relationships of various features and how well K-Means++ has clustered the labels.
+
+```{r, echo=FALSE, error=FALSE, message=FALSE, warning =FALSE}
+# Color of Wine Clustering
+
+# Comparing Acidity and how it relates to color of wine
+a1=qplot(fixed.acidity, volatile.acidity, data = wine, color = factor(clust_color_pp$cluster), alpha = 0.8)
+a2=qplot(fixed.acidity, volatile.acidity, data = wine, color = color, alpha = 0.8)
+
+a1+a2
+
+# Comparing Citric Acid levels and pH balance and how it relates to color of wine
+b1=qplot(citric.acid, pH, data = wine, color = factor(clust_color_pp$cluster), alpha = 0.8)
+b2=qplot(citric.acid, pH, data = wine, color = color, alpha = 0.8)
+
+b1+b2
+
+# Comparing Free and Total Sulfur Dioxide and how it relates to color of wine
+c1=qplot(free.sulfur.dioxide, total.sulfur.dioxide, data = wine, color = factor(clust_color_pp$cluster), alpha = 0.8)
+c2=qplot(free.sulfur.dioxide, total.sulfur.dioxide, data = wine, color = color, alpha = 0.8)
+
+c1+c2
+# Comparing Alcohol and Sulphates and how it relates to color of wine
+d1=qplot(alcohol, sulphates, data = wine, color = factor(clust_color_pp$cluster), alpha = 0.8)
+d2=qplot(alcohol, sulphates, data = wine, color = color, alpha = 0.8)
+
+d1+d2
+
+#ggarrange(a1,a2,b1,b2,c1,c2,d1,d2,
+          #labels = c("Acidities Clustered","Acidities by Color", "Citric Acid v. pH Clustered", "Citric Acid v. pH by Color","Free Sulfur v. Total Sulfur Clustered","Free Sulfur v. Total Sulfur by Color", "Alcohol v. Sulphates Clustered", "Alcohol v. Sulphates by Color"),
+         # ncol = 2, nrow = 4)
+```
+
+Above, we observe various feature relationships in two dimensions. Unfortunately, observing all 11 features in 11 dimensions would be quite ambiguous and tedious. We see here that the interpretation of K-Means++ clustering relative to the actual wine color groupings are rather on par. The nice component of this analysis is the interpretability. There seems to be a relatively clear distinction between red and white wines, and the features represented here strongly indicate association
+
+```{r, echo=FALSE, error=FALSE, message=FALSE, warning =FALSE}
+# Quality Level Clustering
+
+# Comparing Acidity and how it relates to wine quality
+a11=qplot(fixed.acidity, volatile.acidity, data = wine, color = factor(clust_quality_pp$cluster), alpha = 0.8)
+a22=qplot(fixed.acidity, volatile.acidity, data = wine, color = factor(quality), alpha = 0.8)
+
+a11+a22
+# Comparing Citric Acid levels and pH balance and how it relates to wine quality
+b11=qplot(citric.acid, pH, data = wine, color = factor(clust_quality_pp$cluster), alpha = 0.8)
+b22=qplot(citric.acid, pH, data = wine, color = factor(quality), alpha = 0.8)
+b11+b22
+# Comparing Free and Total Sulfur Dioxide and how it relates to wine quality
+c11=qplot(free.sulfur.dioxide, total.sulfur.dioxide, data = wine, color = factor(clust_quality_pp$cluster), alpha = 0.8)
+c22=qplot(free.sulfur.dioxide, total.sulfur.dioxide, data = wine, color = factor(quality), alpha = 0.8)
+c11+c22
+# Comparing Alcohol and Sulphates and how it relates to wine quality
+d11=qplot(alcohol, sulphates, data = wine, color = factor(clust_quality_pp$cluster), alpha = 0.8)
+d22=qplot(alcohol, sulphates, data = wine, color = factor(quality), alpha = 0.8)
+
+d11+d22
+#ggarrange(a11,a22,b11,b22,c11,c22,d11,d22,
+         # labels = c("Acidities Clustered","Acidities by Quality", "Citric Acid v. pH Clustered", "Citric Acid v. pH by Quality","Free Sulfur v. Total Sulfur Clustered","Free #Sulfur v. Total Sulfur by Quality", "Alcohol v. Sulphates Clustered", "Alcohol v. Sulphates by Quality"),
+          #ncol = 2, nrow = 4)
+```
+
+Observing the same relationships but for wine quality, we see the interpretations are substantially more ambiguous and perhaps even difficult to distinguish. Thus, wine quality is ambiguous. This makes sense relative to how easily K-Means++ clustering grouped reds and whites. A logical insinuation could be that color has a strong association with the chemical process grapes undergo to evidently make wine. Quality, however, was measured by wine tasting - a subjective feature. Judges rating the quality of the wine certainly have personal preferences. Thus, when attempting to cluster by quality level and observing the various feature relationships, it is difficult to distinguish what relationships among the features imply something about the quality.
+
+Next, we move onto a Principle Component Analysis (PCA) to determine if this methodology allows for an easier interpretation of labels, and if this emerges naturally from applying this technique.
+
+```{r, echo=FALSE, error=FALSE, message=FALSE, warning =FALSE}
+ggcorrplot::ggcorrplot(cor(X), hc.order =TRUE)
+```
+
+When observing correlations of features, we re-order the features according to hierarchical clustering. In the top left and bottom right regions of the hierarchical correlation plot, we can observe strong, negative correlations. Unless you are a wine maker, a chemist, or a wine connoisseur, perhaps these correlations do not make a lot of sense. Let's take an example of the negative correlation between alcohol level and sulfur dioxide. A relatively straightforward example from this plot could be the negative correlation between density and alcohol. Ethanol is less dense than water, and the higher the concentration, the lower the density. This is because the molecules of ethanol are not as densely packed as, say, water. Chemical relationships are vast, so it is important to disclaim that correlation may not imply causation in this case. For this reason, it actually may not be best practice to consolidate these chemical components of wine just because they appear to be similar.
+
+```{r, echo=FALSE, error=FALSE, message=FALSE, warning =FALSE}
+PCAwine=prcomp(X, scale=TRUE, rank =3)
+summary(PCAwine)
+```
+
+There are several takeaways from observing the summary of the analysis. We see the standard deviation of the PCs is highest in PC1. The proportion of variance each PC accounts for from the original data is somewhat the same, but this proportion is highest in PC1.Cumulatively, all three principle components account for a little more than two-thirds of the variation from the original data.
+
+```{r, echo=FALSE, error=FALSE, message=FALSE, warning =FALSE}
+knitr::kable(round(PCAwine$rotation[,1:3],2),
+             col.names = c("PC1", "PC2","PC3"),
+                               caption = "Principal Components",
+                               booktabs = TRUE)
+```
+
+Looking at the table, we notice similar loadings in PC1 as the correlation plot. The higher, positive magnitudes associated with each feature represents stronger positive correlations and higher, negative magnitudes associated with each feature represents stronger, negative correlations. PC2 may be a bit more ambiguous, in that all features but pH and alcohol are positive. PC3 is similar but still different from PC1.
+
+```{r, echo=FALSE, error=FALSE, message=FALSE, warning =FALSE}
+autoplot(PCAwine, data = wine, colour = 'color', alpha=0.8)
+wine$quality = wine$quality %>% as.factor
+autoplot(PCAwine, data = wine, colour = 'quality', alpha = 0.8, 
+         loadings = TRUE, loadings.colour = 'pink',
+         loadings.label = TRUE, loadings.label.size = 3)
+```
+
+As the clustering methods showed, the color of the wine is easily separated by principle components and they are easily distinguished. We can also make the same conclusion about the quality level of wine (i.e. - it is ambiguous). By consolidating the features for each data point, the principle component does a great job at associating the linear summaries for color of wine.
+
+
+Both clustering and principle components analysis come to the same conclusions more or less. However, K-Means++ offers slightly easier interpretability since we are able to observe relationships while holding clusters constant. The major difference between the clustering methods and the PCA analyses are that the former consolidates by rows (observations) depending on how you choose the number of clusters (k) while the latter consolidates the columns (features). In doing so, there are multiple things to say. Clustering is mutually exclusive meaning each point is a member of only one cluster. A PCA, however, assumes that a data point is some combination of many features which is linearly summarized by projecting each data point and attempting to preserve variation of the data. As alluded to before hand, this may simplify something that may better be interpreted in its original form. Thus, both methodologies yield similar conclusions. However,in this instance, K-Means++ allows for a richer interpretation of the data in a multitude of ways.
+
+#Market segmentation
+```{r include = FALSE}
+#collapse columns
+
+datacompress = data %>%
+  mutate(healthy = health_nutrition + personal_fitness + sports_playing) %>%
+  select(-c(health_nutrition, personal_fitness, sports_playing)) %>%
+  mutate(foodie = food + cooking) %>%
+  select(-c(food, cooking)) %>%
+  mutate(arts = art + music + fashion + tv_film) %>%
+  select(-c(art, music, fashion, tv_film)) %>%
+  mutate(uptodate = current_events + sports_fandom + politics + news) %>%
+  select(-c(current_events, sports_fandom, politics, news)) %>%
+  mutate(hippy = outdoors + eco) %>%
+  select(-c(outdoors, eco)) %>%
+  mutate(familyvalues = parenting + family + religion) %>%
+  select(-c(parenting, family, religion)) %>%
+  mutate(tweens = online_gaming + college_uni + school) %>%
+  select(-c(online_gaming, college_uni, school)) %>%
+  mutate(greedisgood = business + small_business) %>%
+  select(-c(business, small_business)) %>%
+  mutate(crafty = home_and_garden + crafts) %>%
+  select(-c(home_and_garden, crafts)) %>%
+  mutate(girly = beauty + dating + shopping) %>%
+  select(-c(beauty, dating, shopping)) %>%
+  mutate(tech = computers + automotive) %>%
+  select(-c(computers, automotive)) %>%
+  mutate(livelaughlove = travel + photo_sharing) %>%
+  select(-c(travel, photo_sharing)) %>%
+  select(-c(adult, spam))
+```
+
+I started with some pre-processing to do some manual feature compression before my first approach of clustering.  The original data had 36 categories of tweets, most of which had some kind of similarity or overlap with other categories.  I decided to make my own aggregate columns in order to shrink the feature set by adding categories together, then removing the originals.  A few examples of these columns I made were "healthy": health/nutrition + personal fitness + sports playing, "familyvalues": parenting + family + religion, and "tweens": online_gaming + college/uni + school.  I also dropped the "adult" and "spam" columns as I felt these weren't truly informative about market segments.  After this I had only 15 feature columns.  I then plotted a correlation matrix to see if there were any striking correlations between my new categories:
+
+```{r include = FALSE}
+X = datacompress[,2:15]
+```
+```{r echo = FALSE}
+ggcorrplot::ggcorrplot(cor(X))
+```
+
+Some of the strongest correlations I saw were between the "healthy" and "hippy" categories (0.6) and the "tech" and "uptodate" categories (0.63).  These make sense intuitively, so it looks like my categorical compression worked.
+
+Next we'll scale and center our data, and use kmeans++ to create clusters of market segments with similar tweets. Let's start with 4 clusters:
+
+```{r include = FALSE}
+X = scale(X, center=TRUE, scale=TRUE)
+mu = attr(X,"scaled:center")
+sigma = attr(X,"scaled:scale")
+```
+
+```{r include = FALSE}
+clust1 = kmeanspp(X, 4, nstart=25)
+```
+```{r echo = FALSE}
+as.data.frame(clust1$center[1,]*sigma + mu) %>%
+  round(1)
+as.data.frame(clust1$center[2,]*sigma + mu) %>%
+  round(1)
+as.data.frame(clust1$center[3,]*sigma + mu) %>%
+  round(1)
+as.data.frame(clust1$center[4,]*sigma + mu) %>%
+  round(1)
+```
+
+After some experimentation with number of clusters, I settled on 4 clusters, which provided me with somewhat explainable insights about market segments.  Above is the un-Z-scored average tweet profile for each cluster.  We can look at these to glean some kind of information about the interests of our customer base:
+
+Cluster 1 has the highest average tweets in "chatter," "arts," and "girly."  These could be described as the cluster of users whose Twitters are fairly light-hearted, and they spend time talking to friends, reposting their thoughts on arts and culture, and discussing beauty and dating.  Cluster 2 has very a very flat tweet profile, so these could be people who are interested in all topics, and dabble in all areas of the Twitterverse.  Cluster 3 has a very significantly high loading on "uptodate," which includes politics, sports, and news.  These could be described as people who are very active in following the news and current events, and who get lots of their media from Twitter.  They might be more socially aware than the average user.  Cluster 4 has an extremely high loading on "healthy," which includes nutrition, athletics, health, and fitness.  These are your very fitness-minded people who are concerned about artificial sweeteners and microplastics, and who NutrientH2O might want to keep in the forefront of their mind when developing their marketing.
+
+While these "market segment" summaries are useful, we don't have very complete information on who these people are and we can only make an educated guess on how to market to them most effectively.  However, we can tell that health and social awareness are important to NutrientH20's customer base.
+
+#Association rules for grocery purchases
+
+```{r include = FALSE}
+#Scanning in the Data to Make a List
+groceries=scan("/Users/karlo/Desktop/ECO395M/data/groceries.txt",
+               what="", sep="\n")
+
+#Now Stripping the Lists to Make Individual Item Vectors
+groceries=strsplit(groceries, ",")
+
+#Making the Data Ready for Association Rules
+grocery_trans=as(groceries, "transactions")
+
+
+grocery_rules = apriori(grocery_trans, 
+                        parameter=list(support=.005,
+                                       confidence=.005, 
+                                       maxlen=3))
+```
+```{r echo = FALSE}
+plot(grocery_rules)
+```
+
+I set the parameters for original association rules of support and confidence
+at 0.05. I did this to include most relations but no insignificant ones with
+almost no support in the dataset or low confidence in future predictions. As
+well, I wanted to keep the lengths of association at three because most baskets 
+were either four items  or less in the dataset.
+
+```{r echo = FALSE}
+subset1 = subset(grocery_rules, subset= confidence>0.1 & support>0.025)
+inspect(subset1)
+plot(subset1)
+```
+
+When setting the subset for this graph I wanted to see which relationships
+occurred more often than the base level of support. Also I greatly enhanced the 
+level of confidence in the interaction because I wanted to see which
+interactions would have a large lift. Some of the interactions were to be
+expected like "butter" and "milk" or "root vegetables" and "other vegetables".
+These likely occur because they are held in the same sections, meaning that
+a customer will look at both objects in relatively short succession and more
+than likely take both with them if they are picking one. Another sensical 
+relationship in with a large lift is "sausage" and "rolls/buns", there was a
+relatively large lift of 1.77. This basically proves the age old economics idea
+of complementary goods. Many times in economics lectures, professors always use
+hot dogs and buns as complementary goods. Now we see this proven in a real
+context, when buying sausage a consumer tends to buy buns.
